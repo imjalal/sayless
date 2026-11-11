@@ -341,13 +341,22 @@ def run_shell(line: str):
 # ------------------------------------------------------------------ Claude path
 BASE_PROMPT = r"""You are running inside Zap, a small terminal on the user's Windows PC. They type short instructions to get things done on their computer (open things, find files, change settings, close apps, quick questions). Act immediately with your tools - prefer one fast PowerShell command; do not ask questions unless truly needed. Use Start-Process to open apps, files and URLs. Answer in one or two short lines of plain text: no markdown, no headings, no code blocks, no bullet lists. Simple English.
 
-SPEED RULES (they want answers in seconds): every command must finish in under 5 seconds. NEVER use Get-ChildItem -Recurse on big folders (the user folder, Desktop, C:\ or D:\) - it takes minutes. {finder}Do one search, act on the best match, and stop - no second confirming searches. To show a file in its folder: Start-Process explorer -ArgumentList '/select,"<file>"'.
+SPEED RULES (they want answers in seconds): every command must finish in under 5 seconds. NEVER use Get-ChildItem -Recurse on big folders (the user folder, Desktop, C:\ or D:\) - it takes minutes. {finder}Do one search, act on the best match, and stop - no second confirming searches.
+
+DO WHAT THEY WANT WITH THE FILE: if they want to put / paste / add / edit something in a file (an API key, a setting, a note), find it and OPEN it for them: Start-Process notepad '<file>'. If only an example file exists (.env.example, config.example.json), copy it to the real name (.env, config.json) next to it and open the copy. Say which file you opened and which line to fill in.
+
+SECRETS: never print the contents or values of .env files, keys, passwords or tokens - list file names and variable names only. To show a file in its folder: Start-Process explorer -ArgumentList '/select,"<file>"'.
 
 NEWEST FILES: when asked for the latest / last / newest file, search all of these folders at once, newest first, and take the first result - never narrow to one folder on a guess: {roots}"""
 
-RG_FINDER = ("To find files use ripgrep (installed, 1-2 seconds): rg --files --no-ignore --sortr modified "
-             "-g '*.mp4' -g '!node_modules' -g '!AppData' <folders> | Select-Object -First 20 "
-             "(--sortr modified = newest first; add -g patterns for other file types). ")
+SKIP = ("-g '!node_modules' -g '!AppData' -g '!.git' -g '!.venv' -g '!venv' -g '!.next' -g '!dist' -g '!build' "
+        "-g '!.cache' -g '!site-packages' -g '!__pycache__' -g '!.turbo' -g '!.vercel' -g '!target'")
+RG_FINDER = ("To find files use ripgrep (installed, about 1 second) on the folders listed below, never on the whole "
+             "user folder or a drive, and ALWAYS with these skips (without them it takes 10x longer): "
+             f"rg --files --no-ignore --hidden --sortr modified -g '*.mp4' {SKIP} <folders> | Select-Object -First 20 "
+             "(--sortr modified = newest first; --hidden is needed for dot files like .env). To find files by what is "
+             "INSIDE them, use -l -i '<text>' instead of --files, e.g. "
+             f"rg -l -i --no-ignore --hidden --sortr modified -g '.env*' -g '*.env' {SKIP} 'gemini' <folders>. ")
 PS_FINDER = ("To find files use Get-ChildItem -Recurse -Depth 4 -File -ErrorAction SilentlyContinue on the specific "
              "folders below, filtered with -Filter, sorted by LastWriteTime. ")
 
@@ -389,6 +398,9 @@ class Brain:
                    "--model", CFG["model"], "--effort", CFG["effort"],
                    "--permission-mode", CFG["permission_mode"],
                    "--strict-mcp-config",                # no MCP servers: much faster start
+                   # Claude's own Grep/Glob walk whole drives (incl. AppData) and take minutes;
+                   # it must use one bounded ripgrep command instead. No sub-agents either.
+                   "--disallowedTools", "Grep", "Glob", "Agent", "Task",
                    "--append-system-prompt", system_prompt()]
             cmd += ["--session-id", self.sid] if new else ["--resume", self.sid]
             self.err = []
