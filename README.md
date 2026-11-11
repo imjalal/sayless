@@ -1,42 +1,49 @@
-# ⚡ Zap
+# ⚡ Zap: just say it.
 
-**A Windows terminal that does what you say.** It looks and works like a normal PowerShell prompt, but you can type plain words and they happen.
+**The terminal you don't have to learn.** It looks and works like a normal Windows terminal, but you type plain words and they happen. Apps open in 60 ms. Normal commands still work. Anything else is done for you by Claude Code, which asks before it changes anything.
 
-```
-PS C:\Users\you> paint
-opened paint                                   ← 60 ms, no AI
-PS C:\Users\you> google cheap flights to lisbon
-google: cheap flights to lisbon
-PS C:\Users\you> close spotify
-closed spotify
-PS C:\Users\you> git status                    ← normal shell command
-On branch main ...
-PS C:\Users\you> find my newest video and show it in its folder
-  > PowerShell: rg --files --no-ignore --sortr modified -g '*.mp4' ...
-  > PowerShell: Start-Process explorer -ArgumentList '/select,"C:\Users\you\Videos\demo.mp4"'
-Opened the folder with demo.mp4 selected, your newest video (today, 18:43).
-4.2s
-```
+![Zap doing instant commands, an AI task, blocking a risky paste and asking before deleting](docs/hero-midnight.png)
 
-Press **Ctrl+T** from any window and it pops up.
+<sub>Illustrative session, drawn by Zap itself in the "Midnight" look.</sub>
 
-## Why it's fast
+Press **Ctrl+T** in any window and it's there.
 
-Most things never touch the AI:
+## What it fixes
+
+| The old way | In Zap |
+|---|---|
+| "ffmpeg is not recognized…", restart the terminal, edit PATH | `install ffmpeg`, and it works in the same window |
+| Copy a command from a website and hope | Risky commands are **stopped and explained in plain words** first |
+| An AI agent that might delete the wrong thing | It tells you what will happen and asks **Go ahead?** Deletes go to the **Recycle Bin** |
+| `netstat -ano \| findstr :3000`, then `taskkill /PID …` | `free port 3000` |
+| An error you paste into a chatbot | `fix` |
+| Waiting 5 seconds for AI to do the same thing again | `/save standup`, then `standup` runs **instantly, without AI** |
+| Remembering flags | "make this video vertical and cut the first 10 seconds" |
+| A grey box | `/look`, then type a number |
+
+## Fast because most things never touch the AI
 
 | You type | What happens | Time |
 |---|---|---|
 | `paint`, `open chrome`, `spotfy` (typo) | opened from a local index of every Start-menu and Store app | ~60 ms |
-| `youtube`, `gmail`, `google cats`, `yt lofi`, `maps cafe` | site or search opens in your browser | ~60 ms |
-| `close spotify`, `quit paint` | the app is asked to close | ~0.7 s |
-| `dir`, `git status`, `ping x`, `npm run dev` | runs as a normal command | as usual |
-| anything else | [Claude Code](https://claude.com/claude-code) does it on your PC | 3–10 s |
+| `youtube`, `google cats`, `yt lofi`, `maps cafe` | site or search opens in your browser | ~60 ms |
+| `close spotify`, `force close paint` | like clicking X (you still get "save?" prompts) | under 1 s |
+| `install ffmpeg`, `free port 3000`, `disk`, `ip` | built-in tools | instant |
+| a saved recipe (`/save name`) | replays the commands Claude used last time | ~0.4 s |
+| `dir`, `git status`, `npm run dev` | a normal shell command | as usual |
+| anything else | [Claude Code](https://claude.com/claude-code) does it on your PC | 3–15 s |
 
-For the last row, Zap keeps **one Claude Code process warm** in the background (stream-json in and out), so a request skips the start-up cost. It runs without MCP servers, uses Haiku by default, finds files with ripgrep instead of slow recursive searches, and is told to finish every command in under 5 seconds.
+For the last row Zap keeps **one Claude Code process warm**, with no MCP servers, on Haiku, with bounded ripgrep searches instead of slow recursive ones. It uses the Claude plan you already have: **no second subscription, no credits, no API key**.
+
+## Looks
+
+Type `/look`, then a number. The whole window changes. `0` gives you your own terminal colours back.
+
+![The ten looks, picked by number](docs/looks-synthwave.png)
 
 ## Install
 
-Needs Windows 10/11, [Python 3.10+](https://www.python.org/downloads/) and, for the AI part, [Claude Code](https://claude.com/claude-code) (any plan that can run `claude`).
+Needs Windows 10/11, [Python 3.10+](https://www.python.org/downloads/) and, for the AI part, [Claude Code](https://claude.com/claude-code).
 
 ```powershell
 git clone https://github.com/imjalal/zap
@@ -49,24 +56,35 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Hotkey
 - `-DefaultTerminal` makes every new Windows Terminal window and tab open Zap (it keeps a backup).
 - `uninstall.ps1` removes everything.
 
-Then open Zap and type `/login` once if Claude Code isn't signed in yet.
-Optional but recommended: `winget install BurntSushi.ripgrep.MSVC` (file search goes from minutes to ~1 s).
+Open Zap and type `/login` once if Claude Code isn't signed in. Recommended: `install BurntSushi.ripgrep.MSVC` inside Zap (file search goes from minutes to about a second).
 
-You can also run one line from any shell: `python zap.py open paint`.
+One line from any other shell: `python zap.py open paint`.
 
-## Using it
+## Everything you can type
 
 | | |
 |---|---|
-| `!cmd` | force it to run as a shell command |
-| `?text` | force it to go to Claude |
-| `/alias work = C:\Projects` | your own instant shortcut (apps, folders, files, URLs). `/aliases` lists them |
+| `/look` | change the look by number |
+| `/save name` · `/recipes` · `/forget name` | turn the last Claude task into an instant command |
+| `/alias work = C:\Projects` · `/aliases` | your own instant shortcuts (apps, folders, files, URLs) |
+| `fix` | after a command fails: Claude finds the cause and repairs it |
+| `yes` · `explain` | after Zap stops a risky command: run it anyway, or have it explained |
+| `!cmd` · `?text` | force the shell · force Claude |
 | `/model sonnet` | smarter Claude (`haiku` is fastest, `opus` is smartest) |
-| `/new` | start a fresh Claude conversation (Claude remembers the chat until then) |
-| `/apps` | rescan installed apps |
-| `/config` | open the settings file |
-| `Ctrl+C` | stop Claude mid-task (at the prompt it just clears the line) |
-| `↑` / `→` / `Tab` | history, accept the grey suggestion, complete app names |
+| `/new` | fresh Claude conversation (it remembers the chat until then) |
+| `/apps` · `/config` · `/login` · `exit` | rescan apps · open settings · sign in · leave |
+| `Ctrl+C` | stop Claude mid-task |
+| `↑` `→` `Tab` | history · accept the grey suggestion · complete names |
+
+## Safety, in detail
+
+- **Typed or pasted commands** that delete for good, wipe drives, download-and-run code, run encoded scripts, edit the registry, weaken antivirus or rewrite git history are stopped. Zap says what the command does in one line and waits for `yes`.
+- **Claude** must describe any delete, move, rename, overwrite, uninstall or settings change and get a yes first. It is told to use the Recycle Bin, never permanent deletion, and never to print the contents of `.env` files, keys or passwords.
+- Claude also runs under Claude Code's own `auto` permission mode, which blocks actions its safety check finds risky.
+- Every command Claude runs is shown in grey before its answer.
+- Zap sends nothing anywhere. The only network traffic is Claude Code's own.
+
+These are guard rails, not a guarantee: an AI agent can still make mistakes. Set `"confirm_changes": false` if you want it to act without asking.
 
 ## Settings
 
@@ -76,10 +94,9 @@ You can also run one line from any shell: `python zap.py open paint`.
 {
   "title": "Zap",
   "model": "haiku",
-  "effort": "low",
-  "permission_mode": "auto",
-  "show_timing": true,
-  "aliases": { "work": "C:\\Projects", "notes": "obsidian" },
+  "look": 3,
+  "confirm_changes": true,
+  "aliases": { "work": "C:\\Projects" },
   "sites": { "jira": "https://yourteam.atlassian.net" },
   "search_roots": ["~/Desktop", "~/Downloads", "~/Documents", "~/Videos", "~/Pictures"],
   "about_me": "My projects live in D:\\Code. Renders go to out\\ folders.",
@@ -88,26 +105,27 @@ You can also run one line from any shell: `python zap.py open paint`.
 }
 ```
 
-- `about_me` is added to Claude's instructions. Tell it where your stuff lives and it gets faster and more accurate.
-- `hotkey` can be things like `ctrl+t`, `alt+space`, `ctrl+shift+z`, `ctrl+backtick`.
-- `hotkey_pass_through` lists apps that keep their own shortcut, e.g. `["chrome.exe"]` so Ctrl+T still opens a browser tab there.
-
-## Safety
-
-Claude runs with Claude Code's `auto` permission mode: its own safety check approves routine actions and blocks risky ones (there is no one to ask in a terminal, so a blocked action is simply not done). Every command Claude runs is printed in grey before its answer. Set `"permission_mode": "default"` for a read-mostly assistant. Zap itself sends nothing anywhere; the only network traffic is Claude Code's own.
+- `about_me` is added to Claude's instructions. Tell it where your things live and it gets faster and more accurate.
+- `hotkey` can be `ctrl+t`, `alt+space`, `ctrl+shift+z`, `ctrl+backtick`…
+- `hotkey_pass_through` lists apps that keep their own shortcut, e.g. `["chrome.exe"]`.
 
 ## How it works
 
-`zap.py` is one stdlib Python file (plus optional `prompt_toolkit` for history and completion):
+`zap.py` is one Python file (standard library, plus optional `prompt_toolkit` for history and completion):
 
-1. **Router**: aliases → sites/searches → `close X` → app index (exact, prefix, word, then typo match) → shell detection → Claude.
-2. **App index**: Start-menu shortcuts plus `Get-StartApps` (Store apps), cached in `~/.zap/apps.json` and refreshed in the background.
-3. **Launching** goes through a fully detached `start`, so apps never print their logs into your terminal.
-4. **Brain**: `claude -p --input-format stream-json --output-format stream-json` kept alive; text streams as it's written, tool calls are shown as one grey line each.
+1. **Router**: recipes → built-in tools → danger guard → aliases, sites, searches, `close X`, app index (exact, prefix, word, typo) → shell detection → Claude.
+2. **App index**: Start-menu shortcuts plus `Get-StartApps`, cached and refreshed in the background.
+3. **PATH refresh**: after an install, PATH is re-read from the registry, so new programs work without a restart.
+4. **Brain**: `claude -p --input-format stream-json --output-format stream-json`, kept alive. Text streams as it is written.
+5. **Looks**: OSC 10/11/12 colour sequences, supported by Windows Terminal.
 
-`zap_hotkey.pyw` is a tiny low-level keyboard hook (ctypes, no dependencies) that opens Zap or brings it to the front.
+`zap_hotkey.pyw` is a small keyboard hook (ctypes, no dependencies) that opens Zap or brings it to the front.
 
-Run the tests with `python -m pytest tests`.
+Tests: `python -m pytest tests`.
+
+## Roadmap
+
+Voice on the hotkey · a floating bar mode · more agents behind it (Copilot CLI, Codex, local models) · shareable recipe packs.
 
 ## License
 
