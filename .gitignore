@@ -7,3 +7,4 @@ config.json
 history.txt
 .zap/
 *.local.cmd
+*.local.md
