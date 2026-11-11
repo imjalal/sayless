@@ -5,6 +5,6 @@ __pycache__/
 apps.json
 config.json
 history.txt
-.zap/
+.sayless/
 *.local.cmd
 *.local.md

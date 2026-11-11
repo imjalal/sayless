@@ -1,16 +1,18 @@
-# ⚡ Zap: just say it.
+# Sayless
 
-**The terminal you don't have to learn.** It looks and works like a normal Windows terminal, but you type plain words and they happen. Apps open in 60 ms. Normal commands still work. Anything else is done for you by Claude Code, which asks before it changes anything.
+**Say less. Okidoki.**
 
-![Zap doing instant commands, an AI task, blocking a risky paste and asking before deleting](docs/hero-midnight.png)
+The terminal you don't have to learn. It looks and works like a normal Windows terminal, but you type plain words and they happen. Apps open in 60 ms. Normal commands still work. Anything else is done for you by Claude Code, which asks before it changes anything.
 
-<sub>Illustrative session, drawn by Zap itself in the "Midnight" look.</sub>
+![Sayless doing instant commands, an AI task, blocking a risky paste and asking before deleting](docs/hero-midnight.png)
+
+<sub>Illustrative session, drawn by Sayless itself in the "Midnight" look.</sub>
 
 Press **Ctrl+T** in any window and it's there.
 
 ## What it fixes
 
-| The old way | In Zap |
+| The old way | In Sayless |
 |---|---|
 | "ffmpeg is not recognized…", restart the terminal, edit PATH | `install ffmpeg`, and it works in the same window |
 | Copy a command from a website and hope | Risky commands are **stopped and explained in plain words** first |
@@ -20,6 +22,7 @@ Press **Ctrl+T** in any window and it's there.
 | Waiting 5 seconds for AI to do the same thing again | `/save standup`, then `standup` runs **instantly, without AI** |
 | Remembering flags | "make this video vertical and cut the first 10 seconds" |
 | A grey box | `/look`, then type a number |
+| A tool that answers in error codes | It answers **okidoki** |
 
 ## Fast because most things never touch the AI
 
@@ -33,7 +36,7 @@ Press **Ctrl+T** in any window and it's there.
 | `dir`, `git status`, `npm run dev` | a normal shell command | as usual |
 | anything else | [Claude Code](https://claude.com/claude-code) does it on your PC | 3–15 s |
 
-For the last row Zap keeps **one Claude Code process warm**, with no MCP servers, on Haiku, with bounded ripgrep searches instead of slow recursive ones. It uses the Claude plan you already have: **no second subscription, no credits, no API key**.
+For the last row Sayless keeps **one Claude Code process warm**, with no MCP servers, on Haiku, with bounded ripgrep searches instead of slow recursive ones. It uses the Claude plan you already have: **no second subscription, no credits, no API key**.
 
 ## Looks
 
@@ -46,19 +49,19 @@ Type `/look`, then a number. The whole window changes. `0` gives you your own te
 Needs Windows 10/11, [Python 3.10+](https://www.python.org/downloads/) and, for the AI part, [Claude Code](https://claude.com/claude-code).
 
 ```powershell
-git clone https://github.com/imjalal/zap
-cd zap
+git clone https://github.com/imjalal/sayless
+cd sayless
 powershell -ExecutionPolicy Bypass -File install.ps1 -Hotkey
 ```
 
-- `install.ps1` adds Start-menu and Desktop shortcuts and a **Zap** profile in Windows Terminal.
-- `-Hotkey` makes **Ctrl+T** open Zap from any window, at every login.
-- `-DefaultTerminal` makes every new Windows Terminal window and tab open Zap (it keeps a backup).
+- `install.ps1` adds Start-menu and Desktop shortcuts and a **Sayless** profile in Windows Terminal.
+- `-Hotkey` makes **Ctrl+T** open Sayless from any window, at every login.
+- `-DefaultTerminal` makes every new Windows Terminal window and tab open Sayless (it keeps a backup).
 - `uninstall.ps1` removes everything.
 
-Open Zap and type `/login` once if Claude Code isn't signed in. Recommended: `install BurntSushi.ripgrep.MSVC` inside Zap (file search goes from minutes to about a second).
+Open Sayless and type `/login` once if Claude Code isn't signed in. Recommended: `install BurntSushi.ripgrep.MSVC` inside Sayless (file search goes from minutes to about a second).
 
-One line from any other shell: `python zap.py open paint`.
+One line from any other shell: `python sayless.py open paint`.
 
 ## Everything you can type
 
@@ -68,7 +71,7 @@ One line from any other shell: `python zap.py open paint`.
 | `/save name` · `/recipes` · `/forget name` | turn the last Claude task into an instant command |
 | `/alias work = C:\Projects` · `/aliases` | your own instant shortcuts (apps, folders, files, URLs) |
 | `fix` | after a command fails: Claude finds the cause and repairs it |
-| `yes` · `explain` | after Zap stops a risky command: run it anyway, or have it explained |
+| `yes` · `explain` | after Sayless stops a risky command: run it anyway, or have it explained |
 | `!cmd` · `?text` | force the shell · force Claude |
 | `/model sonnet` | smarter Claude (`haiku` is fastest, `opus` is smartest) |
 | `/new` | fresh Claude conversation (it remembers the chat until then) |
@@ -78,21 +81,21 @@ One line from any other shell: `python zap.py open paint`.
 
 ## Safety, in detail
 
-- **Typed or pasted commands** that delete for good, wipe drives, download-and-run code, run encoded scripts, edit the registry, weaken antivirus or rewrite git history are stopped. Zap says what the command does in one line and waits for `yes`.
+- **Typed or pasted commands** that delete for good, wipe drives, download-and-run code, run encoded scripts, edit the registry, weaken antivirus or rewrite git history are stopped. Sayless says what the command does in one line and waits for `yes`.
 - **Claude** must describe any delete, move, rename, overwrite, uninstall or settings change and get a yes first. It is told to use the Recycle Bin, never permanent deletion, and never to print the contents of `.env` files, keys or passwords.
 - Claude also runs under Claude Code's own `auto` permission mode, which blocks actions its safety check finds risky.
 - Every command Claude runs is shown in grey before its answer.
-- Zap sends nothing anywhere. The only network traffic is Claude Code's own.
+- Sayless sends nothing anywhere. The only network traffic is Claude Code's own.
 
 These are guard rails, not a guarantee: an AI agent can still make mistakes. Set `"confirm_changes": false` if you want it to act without asking.
 
 ## Settings
 
-`%USERPROFILE%\.zap\config.json` (created on first run):
+`%USERPROFILE%\.sayless\config.json` (created on first run):
 
 ```json
 {
-  "title": "Zap",
+  "title": "Sayless",
   "model": "haiku",
   "look": 3,
   "confirm_changes": true,
@@ -111,7 +114,7 @@ These are guard rails, not a guarantee: an AI agent can still make mistakes. Set
 
 ## How it works
 
-`zap.py` is one Python file (standard library, plus optional `prompt_toolkit` for history and completion):
+`sayless.py` is one Python file (standard library, plus optional `prompt_toolkit` for history and completion):
 
 1. **Router**: recipes → built-in tools → danger guard → aliases, sites, searches, `close X`, app index (exact, prefix, word, typo) → shell detection → Claude.
 2. **App index**: Start-menu shortcuts plus `Get-StartApps`, cached and refreshed in the background.
@@ -119,7 +122,7 @@ These are guard rails, not a guarantee: an AI agent can still make mistakes. Set
 4. **Brain**: `claude -p --input-format stream-json --output-format stream-json`, kept alive. Text streams as it is written.
 5. **Looks**: OSC 10/11/12 colour sequences, supported by Windows Terminal.
 
-`zap_hotkey.pyw` is a small keyboard hook (ctypes, no dependencies) that opens Zap or brings it to the front.
+`sayless_hotkey.pyw` is a small keyboard hook (ctypes, no dependencies) that opens Sayless or brings it to the front.
 
 Tests: `python -m pytest tests`.
 

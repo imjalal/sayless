@@ -1,4 +1,4 @@
-"""Zap - a Windows terminal that does what you say.
+"""Sayless - a Windows terminal that does what you say.
 
 It looks and works like a normal PowerShell prompt, with Claude Code inside:
 
@@ -10,9 +10,9 @@ It looks and works like a normal PowerShell prompt, with Claude Code inside:
 
 Prefixes:  !cmd  force shell     ?text  force Claude
 Commands:  /help /new /model /alias /aliases /apps /config /login /exit
-Ctrl+C while Claude works stops it.  `python zap.py paint` runs one line and exits.
+Ctrl+C while Claude works stops it.  `python sayless.py paint` runs one line and exits.
 
-https://github.com/imjalal/zap  -  MIT licence  -  not affiliated with Anthropic.
+https://github.com/imjalal/sayless  -  MIT licence  -  not affiliated with Anthropic.
 """
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ import ctypes, difflib, json, os, re, shutil, socket, subprocess, sys, threading
 from pathlib import Path
 from urllib.parse import quote_plus
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 if os.name != "nt":
-    sys.exit("Zap runs on Windows 10/11 only.")
+    sys.exit("Sayless runs on Windows 10/11 only.")
 
-HOME = Path(os.environ.get("ZAP_HOME") or Path.home() / ".zap")
+HOME = Path(os.environ.get("SAYLESS_HOME") or Path.home() / ".sayless")
 CONFIG_FILE, APPS_CACHE, HISTORY = HOME / "config.json", HOME / "apps.json", HOME / "history.txt"
 NO_WINDOW, DETACHED, NEW_GROUP = 0x08000000, 0x00000008, 0x00000200
 
@@ -119,32 +119,35 @@ def prompt_text() -> str:
         return f"{ACCENT}⚡{RESET} {short_cwd()} {ACCENT}›{RESET} "
     return f"PS {os.getcwd()}> "
 
-LOGO = (" ╺━┓┏━┓┏━┓", " ┏━┛┣━┫┣━┛", " ┗━╸╹ ╹╹  ")
+LOGO = (" ┏━┓┏━┓╻ ╻╻  ┏━╸┏━┓┏━┓",
+        " ┗━┓┣━┫┗┳┛┃  ┣╸ ┗━┓┗━┓",
+        " ┗━┛╹ ╹ ╹ ┗━╸┗━╸┗━┛┗━┛")
 
 def banner(brain_ready: bool):
     if not CFG.get("banner", True):
         return
     note = "" if brain_ready else "  ·  Claude Code not found: apps and commands only"
     print(f"{ACCENT}{LOGO[0]}{RESET}")
-    print(f"{ACCENT}{LOGO[1]}{RESET}   just say it.")
+    print(f"{ACCENT}{LOGO[1]}{RESET}   say less.")
     print(f"{ACCENT}{LOGO[2]}{RESET}   {DIM}v{__version__} · {CFG['model']} · /help · /look{note}{RESET}\n")
 
 # ------------------------------------------------------------------ config
 DEFAULTS = {
-    "title": "Zap",
+    "title": "Sayless",
     "model": "haiku",                 # haiku = fastest; sonnet / opus = smarter
     "effort": "low",
     "permission_mode": "auto",        # Claude Code's own safety classifier decides what may run
     "show_timing": True,
-    "look": 0,                        # 0 = your terminal's colours; 1-10 = a Zap look (/look)
+    "look": 0,                        # 0 = your terminal's colours; 1-10 = a Sayless look (/look)
     "banner": True,
+    "ok_word": "okidoki",             # what Sayless says when something is done
     "confirm_changes": True,          # Claude asks "Go ahead?" before deleting / moving / changing things
     "recipes": {},                    # saved with /save: Claude tasks that now run instantly
     "aliases": {},                    # "work": "C:\\Projects", "music": "spotify" ...
     "sites": {},                      # "jira": "https://..."
     "search_roots": ["~/Desktop", "~/Downloads", "~/Documents", "~/Videos", "~/Pictures"],
     "about_me": "",                   # anything Claude should know about your PC (folders, habits)
-    "hotkey": "ctrl+t",               # used by zap_hotkey.pyw
+    "hotkey": "ctrl+t",               # used by sayless_hotkey.pyw
     "hotkey_pass_through": [],        # apps that keep their own hotkey, e.g. ["chrome.exe"]
 }
 
@@ -308,13 +311,13 @@ def close_app(name: str) -> bool:
     for _ in range(15):
         time.sleep(0.1)
         if not any(p.lower() == target.lower() for p in running_processes()):
-            say(f"closed {name}"); return True
+            ok(f"closed {name}"); return True
     if windows and app_windows(target):
         say(f"{name} is still open (it may be asking to save). Say 'force close {name}' to end it.")
         return True
     # nothing on screen any more (tray / background): ending it loses nothing visible
     subprocess.run(["taskkill", "/IM", target, "/F"], capture_output=True, creationflags=NO_WINDOW)
-    say(f"closed {name}")
+    ok(f"closed {name}")
     return True
 
 def force_close(name: str) -> bool:
@@ -325,7 +328,7 @@ def force_close(name: str) -> bool:
     if not hits:
         return False
     subprocess.run(["taskkill", "/IM", min(hits, key=len), "/F", "/T"], capture_output=True, creationflags=NO_WINDOW)
-    say(f"force closed {name}")
+    ok(f"force closed {name}")
     return True
 
 def app_windows(image: str) -> list:
@@ -372,6 +375,10 @@ SENTENCE = re.compile(r"\b(the|my|a|an|me|please|what|how|why|can|could|all|for|
 def say(msg: str):
     print(f"{DIM}{msg}{RESET}")
 
+def ok(msg: str):
+    """An action that worked. Sayless answers the way a helpful person would."""
+    print(f"{ACCENT}{CFG.get('ok_word', 'okidoki')}{RESET} {DIM}· {msg}{RESET}")
+
 def try_fast(line: str) -> bool:
     """Handle the line locally in milliseconds. False = not ours."""
     low = line.strip().lower()
@@ -381,7 +388,7 @@ def try_fast(line: str) -> bool:
     m = re.match(r"^(google|search|youtube|yt|maps|github|amazon|translate)\s+(?:for\s+)?(.+)$", low)
     if m and not VERB.match(low):
         webbrowser.open(SEARCH[m.group(1)] + quote_plus(m.group(2)))
-        say(f"{m.group(1)}: {m.group(2)}")
+        ok(f"{m.group(1)}: {m.group(2)}")
         return True
     m = re.match(r"^force\s+(?:close|quit|kill)\s+(.+)$", low)
     if m:
@@ -399,7 +406,7 @@ def try_fast(line: str) -> bool:
     if not target:
         return False
     launch(target)
-    say(f"opened {name}")
+    ok(f"opened {name}")
     return True
 
 # ------------------------------------------------------------------ shell path
@@ -483,7 +490,7 @@ def install(name: str):
         return
     refresh_path()
     exe = shutil.which(name) or shutil.which(name.split(".")[-1])
-    say(f"{name} is ready in this window: {exe}" if exe else "done. if it added a command, it works in this window now")
+    ok(f"{name} is ready in this window" if exe else "installed. if it added a command, it works in this window now")
 
 # Commands that deserve a plain-words warning before they run (typed, pasted or forced with !).
 DANGER = [
@@ -541,7 +548,7 @@ def utility(low: str) -> bool:
             say(f"port {m.group(1)} is already free")
         for pid, name in owners.items():
             subprocess.run(["taskkill", "/PID", pid, "/F", "/T"], capture_output=True, creationflags=NO_WINDOW)
-            say(f"port {m.group(1)} is free now (ended {name})")
+            ok(f"port {m.group(1)} is free now (ended {name})")
         return True
     m = re.match(r"^(?:what(?:'s| is)?\s+(?:on|using)\s+|who(?:'s| is)?\s+(?:on|using)\s+)?port\s+(\d{2,5})\??$", low)
     if m:
@@ -580,11 +587,11 @@ def run_recipe(name: str) -> bool:
     for tool, command in recipe["run"]:
         shell = ["powershell", "-NoProfile", "-NoLogo", "-Command", command] if tool != "Bash" else ["bash", "-lc", command]
         subprocess.run(shell, capture_output=True, creationflags=NO_WINDOW)
-    say(f"done: {name}")
+    ok(name)
     return True
 
 # ------------------------------------------------------------------ Claude path
-BASE_PROMPT = r"""You are running inside Zap, a small terminal on the user's Windows PC. They type short instructions to get things done on their computer (open things, find files, change settings, close apps, quick questions). Act immediately with your tools - prefer one fast PowerShell command; do not ask questions unless truly needed. Use Start-Process to open apps, files and URLs. Answer in one or two short lines of plain text: no markdown, no headings, no code blocks, no bullet lists. Simple English.
+BASE_PROMPT = r"""You are running inside Sayless, a small terminal on the user's Windows PC. They type short instructions to get things done on their computer (open things, find files, change settings, close apps, quick questions). Act immediately with your tools - prefer one fast PowerShell command; do not ask questions unless truly needed. Use Start-Process to open apps, files and URLs. Answer in one or two short lines of plain text: no markdown, no headings, no code blocks, no bullet lists. Simple English.
 
 SPEED RULES (they want answers in seconds): every command must finish in under 5 seconds. NEVER use Get-ChildItem -Recurse on big folders (the user folder, Desktop, C:\ or D:\) - it takes minutes. {finder}Do one search, act on the best match, and stop - no second confirming searches.
 
@@ -828,7 +835,7 @@ def make_reader():
     except ImportError:
         return lambda prompt: input(prompt)
 
-    class ZapCompleter(Completer):
+    class SaylessCompleter(Completer):
         def get_completions(self, document, complete_event):
             text = document.text_before_cursor
             low = text.lower()
@@ -852,7 +859,7 @@ def make_reader():
 
     HOME.mkdir(parents=True, exist_ok=True)
     session = PromptSession(history=FileHistory(str(HISTORY)), auto_suggest=AutoSuggestFromHistory(),
-                            completer=ZapCompleter(), complete_while_typing=False)
+                            completer=SaylessCompleter(), complete_while_typing=False)
     return lambda prompt: session.prompt(ANSI(prompt))
 
 # ------------------------------------------------------------------ dispatch
@@ -921,7 +928,7 @@ def handle(line: str, brain: Brain) -> bool:
             CFG["aliases"].pop(name, None); say(f"removed {name}")
         save_config(); return True
     if low == "/config":
-        launch(str(CONFIG_FILE)); say("opened settings (restart Zap after editing)"); return True
+        launch(str(CONFIG_FILE)); say("opened settings (restart Sayless after editing)"); return True
     if low == "/login":
         brain.kill(); subprocess.run([brain.exe, "auth", "login"], env=clean_env()); brain.reset(); say("signed in")
         return True
@@ -945,7 +952,7 @@ def handle(line: str, brain: Brain) -> bool:
             say("usage: /save name   (then typing that name repeats the task instantly)"); return True
         name = m.group(1).strip().lower()
         CFG.setdefault("recipes", {})[name] = {"say": brain.last_request, "run": brain.last_commands}
-        save_config(); say(f"saved. type {name} to do it again instantly"); return True
+        save_config(); ok(f"saved. type {name} to do it again instantly"); return True
     if low == "/recipes":
         for k, v in sorted(CFG.get("recipes", {}).items()):
             print(f"  {ACCENT}{k}{RESET} {DIM}= {v.get('say', '')[:70]}{RESET}")
@@ -984,12 +991,12 @@ def main(argv: list[str]):
     if argv and argv[0] in ("-h", "--help"):
         print(__doc__); return
     if argv and argv[0] in ("-v", "--version"):
-        print(f"zap {__version__}"); return
+        print(f"sayless {__version__}"); return
     if not argv:
         os.system(f"title {CFG['title']}")  # first, so the window can be found right away
     load_apps()
     brain = Brain()
-    if argv:  # one-shot:  zap open paint
+    if argv:  # one-shot:  sayless open paint
         handle(" ".join(argv), brain); brain.kill(); return
     os.chdir(Path.home())
     brain.warm()

@@ -1,18 +1,18 @@
-"""Global hotkey for Zap (default Ctrl+T, from any window).
+"""Global hotkey for Sayless (default Ctrl+T, from any window).
 
-Opens Zap, or brings it to the front if it is already open. Runs hidden; install.ps1 -Hotkey
+Opens Sayless, or brings it to the front if it is already open. Runs hidden; install.ps1 -Hotkey
 starts it with Windows. The hotkey and the apps that keep their own shortcut are set in
-%USERPROFILE%\\.zap\\config.json ("hotkey", "hotkey_pass_through"). Log: %USERPROFILE%\\.zap\\hotkey.log
+%USERPROFILE%\\.sayless\\config.json ("hotkey", "hotkey_pass_through"). Log: %USERPROFILE%\\.sayless\\hotkey.log
 """
 import ctypes, json, os, shutil, subprocess, sys, threading, time
 from ctypes import wintypes
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-HOME = Path(os.environ.get("ZAP_HOME") or Path.home() / ".zap")
+HOME = Path(os.environ.get("SAYLESS_HOME") or Path.home() / ".sayless")
 
 def load_config():
-    cfg = {"title": "Zap", "hotkey": "ctrl+t", "hotkey_pass_through": []}
+    cfg = {"title": "Sayless", "hotkey": "ctrl+t", "hotkey_pass_through": []}
     try:
         cfg.update(json.loads((HOME / "config.json").read_text(encoding="utf-8")))
     except Exception:
@@ -112,12 +112,12 @@ def clean_env():
     return {k: v for k, v in os.environ.items()
             if not (k.startswith("CLAUDE") or k in ("ANTHROPIC_BASE_URL", "AI_AGENT"))}
 
-def open_zap():
+def open_sayless():
     hwnd = find_window()
     if hwnd:
         focus(hwnd); return
     py = str(Path(sys.executable).with_name("python.exe"))
-    script = str(ROOT / "zap.py")
+    script = str(ROOT / "sayless.py")
     wt = shutil.which("wt")
     if wt:
         cmd = [wt, "-w", "new", "--title", TITLE, py, script]
@@ -133,7 +133,7 @@ def open_zap():
 
 def on_hotkey():
     try:
-        open_zap()
+        open_sayless()
     except Exception as e:
         log("open failed:", repr(e))
 
@@ -149,7 +149,7 @@ def hook(n, wparam, lparam):
     return user32.CallNextHookEx(None, n, wparam, lparam)
 
 def main():
-    kernel32.CreateMutexW(None, False, "ZapHotkey")
+    kernel32.CreateMutexW(None, False, "SaylessHotkey")
     if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS: one copy is enough
         return
     if not user32.SetWindowsHookExW(WH_KEYBOARD_LL, hook, None, 0):
