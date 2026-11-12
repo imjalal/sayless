@@ -89,3 +89,26 @@ def test_bare_words_are_not_commands():
         assert not sayless.looks_like_shell(word), word
     LAUNCHED.clear()
     assert not sayless.try_fast("yes") and not LAUNCHED
+
+
+def test_plain_words_for_looks_and_logs():
+    for line in ("colors", "sayless colors change", "change the theme", "looks"):
+        assert sayless.LOOK_WORDS.match(line), line
+    for line in ("logs", "show my logs", "activity"):
+        assert sayless.LOG_WORDS.match(line), line
+    assert not sayless.LOOK_WORDS.match("change the colors of this photo")
+
+def test_activity_log_records_and_hides_secrets():
+    class NoBrain:
+        asked = False
+        last_commands = []
+    sayless.handle("/aliases", NoBrain())
+    sayless.TURN.clear(); sayless.log_turn("set key=sk-abcdefghijklmnopqrstuvwxyz123456", 0.1)
+    rows = sayless.read_log()
+    assert rows[-2]["in"] == "/aliases" and rows[-2]["route"] == "command"
+    assert "sk-abc" not in rows[-1]["in"] and "***" in rows[-1]["in"]
+
+def test_trouble_flags():
+    assert sayless.trouble({"route": "claude", "secs": 40}) == "slow"
+    assert sayless.trouble({"route": "shell", "code": 1}) == "exit 1"
+    assert sayless.trouble({"route": "fast", "secs": 0.1}) == ""

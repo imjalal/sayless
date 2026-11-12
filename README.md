@@ -79,6 +79,18 @@ One line from any other shell: `python sayless.py open paint`.
 | `Ctrl+C` | stop Claude mid-task |
 | `↑` `→` `Tab` | history · accept the grey suggestion · complete names |
 
+## Activity log
+
+Sayless keeps a private log on your PC of every request: what you typed, which path it took (instant, shell or Claude), how long it took, the steps Claude ran and anything that failed. Keys and passwords are masked. Nothing leaves your machine.
+
+| Type | What you get |
+| --- | --- |
+| `/log` | your last requests with timings; slow or failed ones are marked |
+| `/log report` | a 7-day summary: typical and slowest times, everything worth a second look |
+| `/log open` | the log folder |
+| `/log off` | stop logging |
+| `sayless --watch` | a live monitor for a second window |
+
 ## Safety, in detail
 
 - **Typed or pasted commands** that delete for good, wipe drives, download-and-run code, run encoded scripts, edit the registry, weaken antivirus or rewrite git history are stopped. Sayless says what the command does in one line and waits for `yes`.

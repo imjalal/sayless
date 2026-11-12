@@ -20,7 +20,7 @@ import ctypes, difflib, json, os, re, shutil, socket, subprocess, sys, threading
 from pathlib import Path
 from urllib.parse import quote_plus
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 if os.name != "nt":
     sys.exit("Sayless runs on Windows 10/11 only.")
@@ -141,6 +141,7 @@ DEFAULTS = {
     "look": 0,                        # 0 = your terminal's colours; 1-10 = a Sayless look (/look)
     "banner": True,
     "ok_word": "okidoki",             # what Sayless says when something is done
+    "log": True,                      # keep a private activity log on this PC (/log shows it)
     "confirm_changes": True,          # Claude asks "Go ahead?" before deleting / moving / changing things
     "recipes": {},                    # saved with /save: Claude tasks that now run instantly
     "aliases": {},                    # "work": "C:\\Projects", "music": "spotify" ...
@@ -372,6 +373,107 @@ SHELL_WORDS = {"cd", "ls", "dir", "cls", "clear", "pwd", "echo", "cat", "type", 
 SENTENCE = re.compile(r"\b(the|my|a|an|me|please|what|how|why|can|could|all|for|to|and|is|it|this|that|which|"
                       r"find|show|make|turn|i|you|with|from|in|on|of)\b", re.I)
 
+# ---- activity log: one line per request, kept on this PC only -----------------------
+LOG_DIR = HOME / "logs"
+TURN: dict = {}
+SECRET = re.compile(r"(sk-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abp]-[A-Za-z0-9-]{10,}"
+                    r"|eyJ[A-Za-z0-9_-]{20,}[.][A-Za-z0-9_.-]+|(?i:(?:key|token|secret|password)s?[=:] *)[^ ]{8,})")
+
+def redact(text: str) -> str:
+    return SECRET.sub("***", text)
+
+def note(**kw):
+    TURN.update(kw)
+
+def log_turn(line: str, secs: float):
+    if not CFG.get("log", True):
+        return
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        now = time.localtime()
+        rec = {"t": time.strftime("%H:%M:%S", now), "in": redact(line), "route": "command", "secs": round(secs, 2)}
+        rec.update(TURN)
+        with open(LOG_DIR / (time.strftime("%Y-%m-%d", now) + ".jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+def read_log(days: int = 1) -> list[dict]:
+    out = []
+    for f in sorted(LOG_DIR.glob("*.jsonl"))[-days:]:
+        for raw in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                r = json.loads(raw); r["day"] = f.stem; out.append(r)
+            except ValueError:
+                pass
+    return out
+
+def trouble(r: dict) -> str:
+    """Why this request deserves a second look ('' = it went fine)."""
+    if r.get("error"):
+        return "error"
+    if r.get("code"):
+        return f"exit {r['code']}"
+    if r.get("denied"):
+        return "blocked"
+    if r.get("tool_errors"):
+        return f"{len(r['tool_errors'])} retries"
+    if r.get("stopped"):
+        return "stopped"
+    if r.get("route") == "claude" and r.get("secs", 0) > 15:
+        return "slow"
+    return ""
+
+def log_line(r: dict) -> str:
+    bad = trouble(r)
+    tag = f"  {RED}{bad}{RESET}" if bad else ""
+    extra = f" {DIM}first word {r['first']}s, {len(r.get('tools', []))} steps{RESET}" if r.get("route") == "claude" else ""
+    return f"{DIM}{r['t']}{RESET} {ACCENT}{r.get('route', '?'):7}{RESET} {r.get('secs', 0):6.1f}s  {r.get('in', '')[:70]}{extra}{tag}"
+
+def show_log(n: int = 15):
+    rows = read_log()
+    if not rows:
+        say("no activity logged yet today"); return
+    for r in rows[-n:]:
+        print(log_line(r))
+    say(f"full log: {LOG_DIR}   (/log open shows the folder, /log report sums it up)")
+
+def report(days: int = 7):
+    rows = read_log(days)
+    if not rows:
+        say("nothing logged yet"); return
+    print(f"{ACCENT}{len(rows)} requests{RESET} {DIM}over the last {days} day(s){RESET}")
+    for route in sorted({r.get("route", "?") for r in rows}):
+        secs = sorted(r.get("secs", 0) for r in rows if r.get("route") == route)
+        print(f"  {route:8} {len(secs):4}   typical {secs[len(secs) // 2]:5.1f}s   slowest {secs[-1]:5.1f}s")
+    bad = [r for r in rows if trouble(r)]
+    print(f"{ACCENT}{len(bad)} worth a look{RESET}")
+    for r in bad[-12:]:
+        print("  " + log_line(r))
+    slow = sorted((r for r in rows if r.get("route") == "claude"), key=lambda r: -r.get("secs", 0))[:5]
+    if slow:
+        print(f"{ACCENT}slowest{RESET}")
+        for r in slow:
+            print("  " + log_line(r))
+
+def watch():
+    """Live view for a second window: prints each request as it happens."""
+    print(f"{DIM}watching {LOG_DIR} - Ctrl+C to stop{RESET}")
+    seen = len(read_log())
+    try:
+        while True:
+            rows = read_log()
+            for r in rows[seen:]:
+                print(log_line(r))
+                for tool in r.get("tools", []):
+                    print(f"{DIM}           > {tool}{RESET}")
+                for err in r.get("tool_errors", []):
+                    print(f"{RED}           ! {err}{RESET}")
+            seen = max(seen, len(rows)) if len(rows) >= seen else len(rows)
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+
 def say(msg: str):
     print(f"{DIM}{msg}{RESET}")
 
@@ -453,6 +555,7 @@ def run_shell(line: str):
             refresh_path()  # a new install is usable right away, no restart
             if code != 0 and not known and shutil.which(first):
                 code = subprocess.run(["powershell", "-NoProfile", "-NoLogo", "-Command", s]).returncode
+        note(route="shell", code=code)
         if code != 0:
             LAST_FAIL = (s, code, os.getcwd())
             say("that failed. type fix and Claude will find out why and sort it out")
@@ -620,10 +723,27 @@ SAFETY = """SAFETY (the user may not be technical and must be able to trust you)
 
 """
 
+ABOUT_SAYLESS = """
+
+ABOUT SAYLESS ITSELF: when they ask about this terminal (its colours, logs, saved tasks, shortcuts, speed), do not build anything and do not touch Windows - tell them the built-in command in one line: /look changes colours (then type a number), /log shows what they did and how long it took (/log report sums it up, /log open shows the folder), /save name makes the last task instant, /recipes lists saved tasks, /help shows everything. Sayless already keeps a private log of every request in {logs}. Never switch on Windows auditing, script-block logging or registry policies to "log" things."""
+
+FAST_JOBS = r"""
+
+FOLDER SIZES (Get-ChildItem -Recurse | Measure-Object takes minutes - never use it for sizes): use robocopy in list-only mode, about 1 second per folder, nothing is copied: $o = robocopy '<folder>' NULL /L /S /NJH /BYTES /NC /NDL /NFL /XJ /R:0 /W:0 /MT:16 | Select-String '^\s*Bytes\s*:\s*(\d+)'; [double]$o.Matches[0].Groups[1].Value/1GB. For "what is taking space" loop that over the sub-folders and sort.
+
+COUNTING OR SIZING FILES BY TYPE (how many photos, videos, PDFs, how big): same robocopy list with the patterns after NULL, then read the Files and Bytes summary lines: robocopy '<folder>' NULL *.jpg *.jpeg *.png *.heic /L /S /NJH /BYTES /NC /NDL /NFL /XJ /R:0 /W:0 /MT:16 /XD node_modules .git AppData. One call per folder and per kind.
+
+ROBOCOPY EXIT CODES: 0-7 mean success, so end any command that uses robocopy with: ; exit 0
+
+FILES CHANGED RECENTLY (today, this week, last N days): one robocopy list per folder, about 1 second: robocopy '<folder>' NULL /L /S /MAXAGE:<days> /NJH /NJS /NDL /NC /NS /FP /XJ /R:0 /W:0 /XD node_modules .git AppData .venv venv .next dist build .cache site-packages __pycache__ - each non-empty line is a full path (Trim it). Group by top folder to summarise. Do not list every file with rg and then call Get-Item on each.
+
+NETWORK: for the local IP use the adapter that has a default gateway: (Get-NetIPConfiguration | Where-Object IPv4DefaultGateway).IPv4Address.IPAddress - not virtual adapters (WSL, Hyper-V, VPN)."""
+
 def system_prompt() -> str:
     roots = " ".join(f'"{expand(r)}"' for r in CFG.get("search_roots", []))
     p = BASE_PROMPT.format(finder=RG_FINDER if shutil.which("rg") else PS_FINDER, roots=roots,
                            safety=SAFETY if CFG.get("confirm_changes", True) else "")
+    p += FAST_JOBS + ABOUT_SAYLESS.format(logs=LOG_DIR)
     if CFG.get("about_me"):
         p += "\n\nABOUT THIS USER AND PC:\n" + CFG["about_me"]
     return p
@@ -642,6 +762,8 @@ class Brain:
         self.last_out = 0.0
         self.last_request, self.last_commands = "", []
         self.turn_text, self.asked = "", False   # asked: Claude ended with a question
+        self.first, self.tools, self.tool_errors, self.meta = 0.0, [], [], {}
+        self.cost_so_far = 0.0
 
     def available(self) -> bool:
         return Path(self.exe).exists() or bool(shutil.which(self.exe))
@@ -666,6 +788,7 @@ class Brain:
                    "--disallowedTools", "Grep", "Glob", "Agent", "Task",
                    "--append-system-prompt", system_prompt()]
             cmd += ["--session-id", self.sid] if new else ["--resume", self.sid]
+            self.cost_so_far = 0.0
             self.err = []
             self.proc = subprocess.Popen(cmd, cwd=str(Path.home()), env=clean_env(), stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -716,6 +839,7 @@ class Brain:
             if t == "stream_event":
                 e = ev.get("event", {})
                 if e.get("type") == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta":
+                    self.first = self.first or time.time()
                     self._write(e["delta"]["text"]); self.turn_text += e["delta"]["text"]
                 elif e.get("type") == "content_block_stop" and not self.at_line_start:
                     self._write("\n")
@@ -723,10 +847,24 @@ class Brain:
                 for b in ev.get("message", {}).get("content", []):
                     if b.get("type") == "tool_use":
                         self._write(f"{DIM}  > {tool_summary(b)}{RESET}\n")
+                        self.first = self.first or time.time()
+                        self.tools.append(redact(tool_summary(b, 300)))
                         cmd = (b.get("input") or {}).get("command")
                         if cmd and b.get("name") in ("PowerShell", "Bash"):
                             self.last_commands.append([b["name"], cmd])
+            elif t == "user":
+                content = ev.get("message", {}).get("content", [])
+                for b in content if isinstance(content, list) else []:
+                    if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                        self.tool_errors.append(redact(" ".join(str(b.get("content", "")).split())[:240]))
             elif t == "result":
+                total = ev.get("total_cost_usd") or 0
+                self.meta = {"turns": ev.get("num_turns"), "cost": round(max(total - self.cost_so_far, 0), 4)}
+                self.cost_so_far = total
+                if ev.get("permission_denials"):
+                    self.meta["denied"] = [redact(str(d)[:200]) for d in ev["permission_denials"]]
+                if ev.get("is_error"):
+                    self.meta["error"] = str(ev.get("result") or "Claude hit an error")[:300]
                 if ev.get("is_error"):
                     msg = str(ev.get("result") or "Claude hit an error")
                     if re.search(r"authenticat|oauth|not logged in|/login|api key", msg, re.I):
@@ -741,6 +879,7 @@ class Brain:
             blob = "".join(self.err).strip()
             if blob:
                 self._write(f"{RED}Claude stopped: {blob[-300:]}{RESET}\n")
+                self.meta["error"] = "Claude stopped: " + blob[-300:]
             self.proc = None
             self.done.set()
 
@@ -748,6 +887,8 @@ class Brain:
     def ask(self, text: str, remember: str = ""):
         self.last_request, self.last_commands = remember, []
         self.turn_text, self.asked = "", False
+        self.first, self.tools, self.tool_errors, self.meta = 0.0, [], [], {}
+        note(route="claude")
         if not self.available():
             print(f"{RED}Claude Code is not installed. Get it at https://claude.com/claude-code{RESET}"); return
         self.done.clear()
@@ -760,6 +901,7 @@ class Brain:
             except (OSError, ValueError, AttributeError):
                 self.kill()
         else:
+            note(error="could not reach Claude")
             print(f"{RED}could not reach Claude{RESET}"); return
         t0 = self.last_out = time.time()
         self.busy = True
@@ -771,10 +913,15 @@ class Brain:
             self.interrupt()
             self.done.wait(5)
             self._write(f"{DIM}stopped{RESET}\n")
+            note(stopped=True)
         finally:
             self.busy = False
             spin.join(0.5)
         self.asked = self.turn_text.rstrip().endswith("?")
+        note(first=round((self.first or time.time()) - t0, 1), tools=self.tools, reply=redact(self.turn_text.strip()[:500]),
+             asked=self.asked, **self.meta)
+        if self.tool_errors:
+            note(tool_errors=self.tool_errors)
         if CFG.get("show_timing"):
             self._write(f"{DIM}{time.time() - t0:.1f}s{RESET}\n")
 
@@ -794,11 +941,11 @@ class Brain:
     def reset(self):
         self.kill(); self.sid = None; self.warm()
 
-def tool_summary(b: dict) -> str:
+def tool_summary(b: dict, width: int = 110) -> str:
     i = b.get("input", {}) or {}
     v = i.get("command") or i.get("file_path") or i.get("pattern") or i.get("url") or i.get("description") or ""
     v = " ".join(str(v).split())
-    return f"{b.get('name', 'tool')}: {v[:110]}{'...' if len(v) > 110 else ''}"
+    return f"{b.get('name', 'tool')}: {v[:width]}{'...' if len(v) > width else ''}"
 
 # ------------------------------------------------------------------ input
 def help_text() -> str:
@@ -815,12 +962,13 @@ def help_text() -> str:
 
 {a}/look{r}     change the look (type a number)      {a}/alias{r} name = target   {a}/aliases{r}
 {a}/model{r}    haiku | sonnet | opus                {a}/new{r}   fresh Claude chat
+{a}/log{r}      what you did, how long it took  {d}/log report · /log open · /log off{r}
 {a}/apps{r}     rescan apps   {a}/config{r} settings   {a}/login{r}   {a}exit{r}
 {a}!cmd{r} force shell   {a}?text{r} force Claude   {a}Ctrl+C{r} stop Claude   {a}↑ → Tab{r} history, suggestion, complete
 {d}settings: {CONFIG_FILE}{r}
 """
 
-COMMANDS = ["/help", "/look", "/save", "/recipes", "/forget", "/new", "/model", "/alias", "/aliases", "/apps", "/config", "/login", "/exit"]
+COMMANDS = ["/help", "/look", "/log", "/save", "/recipes", "/forget", "/new", "/model", "/alias", "/aliases", "/apps", "/config", "/login", "/exit"]
 
 def make_reader():
     """prompt_toolkit gives history, fish-style suggestions and Tab completion; plain input() otherwise."""
@@ -868,7 +1016,24 @@ ANSWERS = {"yes", "y", "no", "n", "ok", "okay", "sure", "yep", "nope", "go", "go
 TIPS_SHOWN = 0
 
 def handle(line: str, brain: Brain) -> bool:
-    """Run one line. Returns False when the user wants to leave."""
+    """Run one line and write it to the activity log. Returns False when the user wants to leave."""
+    TURN.clear()
+    t0 = time.time()
+    try:
+        return _handle(line, brain)
+    except KeyboardInterrupt:
+        note(stopped=True); raise
+    except Exception as e:
+        note(error=f"{type(e).__name__}: {e}"); raise
+    finally:
+        if line.strip():
+            log_turn(line.strip(), time.time() - t0)
+
+LOOK_WORDS = re.compile(r"^(?:sayless\s+)?(?:(?:change|switch|pick|choose|show|set)\s+)?(?:the\s+|my\s+|a\s+)?"
+                        r"(?:colou?rs?|themes?|looks?|appearances?|skins?)(?:\s+change)?$")
+LOG_WORDS = re.compile(r"^(?:show\s+|open\s+|see\s+)?(?:the\s+|my\s+)?(?:logs?|activity|history)$")
+
+def _handle(line: str, brain: Brain) -> bool:
     line = line.strip()
     low = line.lower()
     if not line:
@@ -888,10 +1053,24 @@ def handle(line: str, brain: Brain) -> bool:
         else:
             say("cancelled, nothing ran")
         return True
-    if PICKING_LOOK:
-        PICKING_LOOK = False
+    if PICKING_LOOK:  # stays on while they keep trying numbers
         if low.isdigit() and set_look(low):
             return True
+        PICKING_LOOK = False
+    if LOOK_WORDS.match(low):
+        show_looks(); PICKING_LOOK = True; return True
+    m = re.match(r"^/logs?(?:\s+(\w+))?$", low)
+    if m or LOG_WORDS.match(low):
+        what = m.group(1) if m else None
+        if what == "open":
+            LOG_DIR.mkdir(parents=True, exist_ok=True); launch(str(LOG_DIR)); ok("opened the log folder")
+        elif what == "report":
+            report()
+        elif what == "off" or what == "on":
+            CFG["log"] = what == "on"; save_config(); say(f"activity log is {what}")
+        else:
+            show_log()
+        return True
     m = re.match(r"^/?looks?(?:\s+(.+))?$", low) or re.match(r"^/(?:theme|themes|appearance)(?:\s+(.+))?$", low)
     if m:
         if m.group(1):
@@ -969,13 +1148,15 @@ def handle(line: str, brain: Brain) -> bool:
         return True
     if line.startswith("?"):
         brain.ask(line[1:].strip()); return True
-    if run_recipe(line) or utility(low):
-        return True
+    if run_recipe(line):
+        note(route="recipe"); return True
+    if utility(low):
+        note(route="utility"); return True
     shellish = looks_like_shell(line)
     if (shellish or re.search(r"[|;&$(){}]", line)) and guard(line):
-        return True
+        note(route="guard"); return True
     if try_fast(line):
-        return True
+        note(route="fast"); return True
     if shellish:
         run_shell(line); return True
     brain.ask(f"[current folder: {os.getcwd()}] {line}", remember=line)
@@ -992,6 +1173,10 @@ def main(argv: list[str]):
         print(__doc__); return
     if argv and argv[0] in ("-v", "--version"):
         print(f"sayless {__version__}"); return
+    if argv and argv[0] == "--report":
+        report(int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 7); return
+    if argv and argv[0] == "--watch":
+        os.system("title Sayless monitor"); watch(); return
     if not argv:
         os.system(f"title {CFG['title']}")  # first, so the window can be found right away
     load_apps()
